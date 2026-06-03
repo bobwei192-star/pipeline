@@ -1,0 +1,45 @@
+- job:
+    name: test-failure-pipeline
+    description: 'Test Pipeline for Self-Healing Demo - Managed by JJB'
+    display-name: 'Test Failure Pipeline (Self-Healing Demo)'
+    project-type: pipeline
+    concurrent: false
+    disabled: false
+    
+    logrotate:
+      daysToKeep: 30
+      numToKeep: 50
+    
+    parameters:
+      - string:
+          name: BUILD_BRANCH
+          default: main
+          description: 'Git branch to build'
+      - string:
+          name: TEST_COMMAND
+          default: 'date--'
+          description: 'Command to execute (intentionally wrong for demo)'
+    
+    triggers:
+      - pollscm: 'H/5 * * * *'
+    
+    dsl: |
+      pipeline {
+        agent any
+        
+        stages {
+          stage('Run Command') {
+            steps {
+              echo "Executing command: ${params.TEST_COMMAND}"
+              sh "${params.TEST_COMMAND}"
+            }
+          }
+          
+          stage('Verify Success') {
+            steps {
+              echo 'All steps completed successfully!'
+              sh 'echo "Pipeline verification passed"'
+            }
+          }
+        }
+      }
