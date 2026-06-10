@@ -1,100 +1,57 @@
 pipeline {
     agent any
     
+    // 定义 Git 凭据 - 需要在 Jenkins 中预先配置好凭据
+    // 请先在 Jenkins 凭据管理器中创建以下凭据之一：
+    // 1. Username with Password: 用户名填 GitHub 用户名，密码填 Personal Access Token (PAT)
+    // 2. Secret file: SSH 私钥文件
+    // 然后在 environment 块或 checkout 步骤中引用
+    
     environment {
-        // Harbor 配置
-        HARBOR_URL = '172.21.201.77:18446'
-        HARBOR_PROJECT = 'rocm_and_model_env'
-        IMAGE_NAME = 'rocm-ryzen-image'
-        IMAGE_TAG = "${BUILD_NUMBER}"
-        
-        // BuildAgent 仓库（开源，无需凭据）
-        BUILD_REPO = 'https://github.com/bobwei192-star/build.git'
+        // 使用 Jenkins 凭据 ID，请替换为实际的凭据 ID
+        // 推荐在 Jenkins 凭据管理器中创建 'github-pat' 或类似名称的凭据
+        GIT_CREDENTIALS = credentials('github-pat')
     }
     
     stages {
-        stage('Checkout BuildAgent') {
+        stage('Checkout') {
             steps {
-                script {
-                    echo "🔄 Cloning BuildAgent repository..."
-                    sh """
-                        rm -rf build-agent-temp
-                        git clone ${BUILD_REPO} build-agent-temp
-                        ls -la build-agent-temp/
-                    """
-                }
+                // 方式一：使用显式凭据进行 checkout（推荐）
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/main']],  // 根据实际情况调整分支
+                    extensions: [],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/bobwei192-star/pipeline.git',
+                        credentialsId: 'github-pat'  // 替换为 Jenkins 中实际配置的凭据 ID
+                    ]]
+                ])
             }
         }
         
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    echo "🐳 Building Docker image..."
-                    sh """
-                        cd build-agent-temp
-                        
-                        # 构建镜像
-                        docker build -t ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} .
-                        
-                        # 标记为 latest
-                        docker tag ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
-                    """
-                }
-            }
-        }
+        // 或者使用更简洁的方式（如果已在 Jenkins 作业配置中设置）
+        // stage('Checkout Simple') {
+        //     steps {
+        //         git branch: 'main',
+        //            credentialsId: 'github-pat',
+        //            url: 'https://github.com/bobwei192-star/pipeline.git'
+        //     }
+        // }
         
-        stage('Push to Harbor') {
+        stage('Build') {
             steps {
-                script {
-                    echo "📤 Pushing image to Harbor..."
-                    // 使用 Jenkins 凭据
-                    withCredentials([usernamePassword(credentialsId: 'harbor-credentials', usernameVariable: 'HARBOR_USER', passwordVariable: 'HARBOR_PASS')]) {
-                        sh """
-                            # 登录 Harbor
-                            echo "${HARBOR_PASS}" | docker login ${HARBOR_URL} -u ${HARBOR_USER} --password-stdin
-                            
-                            # 推送镜像
-                            docker push ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
-                            docker push ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
-                            
-                            echo "✅ Image pushed successfully!"
-                        """
-                    }
-                }
-            }
-        }
-        
-        stage('Verify') {
-            steps {
-                script {
-                    echo "🔍 Verifying image in Harbor..."
-                    sh """
-                        # 清理本地镜像
-                        docker rmi ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} || true
-                        docker rmi ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest || true
-                        
-                        echo "✅ Build ${BUILD_NUMBER} completed successfully!"
-                        echo "Image: ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
-                    """
-                }
+                echo 'Starting build...'
+                // 添加实际的构建步骤
             }
         }
     }
     
     post {
         always {
-            script {
-                echo "🧹 Cleaning up..."
-                sh """
-                    rm -rf build-agent-temp || true
-                """
-            }
-        }
-        success {
-            echo "🎉 Pipeline succeeded!"
+            echo 'Pipeline finished'
         }
         failure {
-            echo "❌ Pipeline failed!"
+            echo 'Pipeline failed - please check Git credentials configuration'
         }
     }
 }
