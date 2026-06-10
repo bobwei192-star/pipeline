@@ -1,0 +1,26 @@
+job:
+  name: 'rocm_on_ryzen_docker_image_build'
+  project-type: pipeline
+  description: 'Build ROCm on Ryzen Docker image'
+  properties:
+    - github:
+        url: 'https://github.com/bobwei192-star/pipeline'
+  pipeline-scm:
+    scm:
+      - git:
+          url: 'https://github.com/bobwei192-star/pipeline.git'
+          credentials-id: 'github-pat-credentials'
+          branches:
+            - '*/main'
+            - '*/master'
+          browser: auto
+          timeout: 30
+    script-path: 'Jenkinsfile'
+    lightweight-checkout: true
+  triggers:
+    - github
+  wrappers:
+    - credentials-binding:
+        - text:
+            credential-id: 'github-pat-credentials'
+            variable: 'GITHUB_TOKEN'
