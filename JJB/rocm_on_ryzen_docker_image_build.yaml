@@ -1,0 +1,58 @@
+job('rocm_on_ryzen_docker_image_build') {
+    description('Build ROCm on Ryzen Docker image')
+    
+    // 配置 SCM 使用带凭证的 Git
+    scm {
+        git {
+            remote {
+                url('https://github.com/bobwei192-star/pipeline.git')
+                // 使用 Jenkins 凭证 ID 进行认证
+                // 需要在 Jenkins 中预先创建凭证，类型为 'Username with password'
+                // 用户名: GitHub 用户名, 密码: GitHub Personal Access Token (classic)
+                credentials('github-pat-credentials')
+            }
+            branches('*/main', '*/master')
+            extensions {
+                cleanBeforeCheckout()
+            }
+        }
+    }
+    
+    // 或者使用 Pipeline 定义，在 Jenkinsfile 中指定凭证
+    definition {
+        cpsScm {
+            scm {
+                git {
+                    remote {
+                        url('https://github.com/bobwei192-star/pipeline.git')
+                        credentials('github-pat-credentials')
+                    }
+                    branches('*/main', '*/master')
+                    scriptPath('Jenkinsfile')
+                }
+            }
+        }
+    }
+    
+    triggers {
+        scm('H/5 * * * *')
+    }
+    
+    wrappers {
+        timestamps()
+    }
+    
+    // 如果需要在节点上执行，指定标签
+    label('docker')
+    
+    steps {
+        shell('''
+            echo "Building ROCm on Ryzen Docker image..."
+            # 构建步骤在 Jenkinsfile 中定义
+        ''')
+    }
+    
+    publishers {
+        // 发布器配置
+    }
+}
