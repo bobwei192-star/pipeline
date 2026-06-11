@@ -1,0 +1,85 @@
+/* 此问题无法通过修改 Jenkinsfile 或 JJB YAML 中的代码内容来修复。
+ * 需要在 Jenkins 系统配置层面添加凭据，然后在 JJB YAML 中引用该凭据。
+ * 以下是修复此问题的完整步骤和示例 JJB YAML 配置：
+ */
+
+// ========== 步骤 1: 在 Jenkins 中创建凭据 ==========
+// 进入 Jenkins Web UI: Manage Jenkins -> Manage Credentials -> (选择域) -> Add Credentials
+// - Kind: Username with password
+// - Username: 你的 GitHub 用户名
+// - Password: GitHub Personal Access Token (PAT)，不是登录密码！
+//   生成地址: https://github.com/settings/tokens
+//   所需权限: repo (完整仓库访问权限)
+// - ID: github-pat-credentials  (自定义，后续在 JJB 中引用)
+// - Description: GitHub PAT for pipeline repo
+
+// ========== 步骤 2: 修改 JJB YAML 配置 ==========
+// 在 job 定义中添加 credentials-id 引用
+
+- job:
+    name: rocm_on_ryzen_docker_image_build
+    project-type: pipeline
+    description: 'Build ROCm Docker image on Ryzen'
+    
+    // 添加 SCM 配置，指定凭据
+    pipeline-scm:
+      scm:
+        - git:
+            url: https://github.com/bobwei192-star/pipeline.git
+            credentials-id: github-pat-credentials  // 关键修复：添加凭据引用
+            branches:
+              - '*/main'  // 或实际需要构建的分支
+            script-path: Jenkinsfile
+            lightweight-checkout: true
+      
+    // 或者如果是 Pipeline script from SCM 的替代方式，使用以下配置：
+    
+    // 如果是 freestyle 或直接使用 pipeline 定义，确保 SCM 部分包含凭据：
+    scm:
+      - git:
+          url: https://github.com/bobwei192-star/pipeline.git
+          credentials-id: github-pat-credentials  // 关键修复：添加凭据引用
+          branches:
+            - '*/main'
+          
+    // 其他构建参数保持不变
+    properties:
+      - build-discarder:
+          days-to-keep: 30
+          num-to-keep: 10
+
+// ========== 替代方案: 使用 SSH URL 代替 HTTPS ==========
+// 如果更喜欢使用 SSH 密钥，可以修改仓库 URL 并配置 SSH 凭据：
+
+- job:
+    name: rocm_on_ryzen_docker_image_build
+    project-type: pipeline
+    
+    pipeline-scm:
+      scm:
+        - git:
+            url: git@github.com:bobwei192-star/pipeline.git  // SSH URL
+            credentials-id: github-ssh-key-credentials  // SSH 私钥凭据 ID
+            branches:
+              - '*/main'
+            script-path: Jenkinsfile
+
+// ========== 步骤 3: 验证 Jenkins 代理的 Git 版本 ==========
+// 确保 Git 版本 >= 2.3，以支持 credential.helper 缓存
+// 可在 Jenkinsfile 中添加以下检查（可选）：
+
+/*
+pipeline {
+    agent any
+    stages {
+        stage('Verify Environment') {
+            steps {
+                sh '''
+                    git --version
+                    command -v git
+                '''
+            }
+        }
+    }
+}
+*/
