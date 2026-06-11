@@ -1,0 +1,22 @@
+flow_definitions:
+  - script: |
+      node('master') {
+        stage('Checkout') {
+          // 修复认证失败问题：显式指定凭据 ID
+          // 请确保 Jenkins 中存在 ID 为 'github-pipeline-credentials' 的凭据
+          // 或者根据实际情况替换为正确的 Username/Password 或 SSH Key 凭据 ID
+          git url: 'https://github.com/bobwei192-star/pipeline.git', 
+              branch: 'main', 
+              credentialsId: 'github-pipeline-credentials'
+        }
+        // 后续构建逻辑...
+      }
+    // 或者如果使用 JJB (Job Builder) 配置 SCM 轮询:
+    scm:
+      - git:
+          url: 'https://github.com/bobwei192-star/pipeline.git'
+          branches:
+            - '*/main'
+          // 关键修复：添加 credentials-id
+          credentials-id: 'github-pipeline-credentials'
+          skip-tag: true
