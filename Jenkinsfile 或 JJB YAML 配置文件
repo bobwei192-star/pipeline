@@ -1,0 +1,62 @@
+job('rocm_on_ryzen_docker_image_build') {
+    description('Build ROCm on Ryzen Docker image')
+    
+    // 配置 SCM 使用带凭证的 Git
+    scm {
+        git {
+            remote {
+                url('https://github.com/bobwei192-star/pipeline.git')
+                // 需要先在 Jenkins 中创建凭据，然后替换 'your-github-credentials-id'
+                // 创建方式: Jenkins 管理 -> Manage Credentials -> 添加凭据
+                // 类型: Username with password (用户名: GitHub用户名, 密码: Personal Access Token)
+                credentials('github-pat-credentials')
+            }
+            branch('*/main') // 或实际使用的默认分支
+        }
+    }
+    
+    // 或者使用 JJB YAML 格式
+    properties([
+        pipelineTriggers([])
+    ])
+    
+    definition {
+        cpsScm {
+            scm {
+                git {
+                    remote {
+                        url('https://github.com/bobwei192-star/pipeline.git')
+                        credentials('github-pat-credentials')
+                    }
+                    branches(['*/main'])
+                    scriptPath('Jenkinsfile')
+                }
+            }
+        }
+    }
+    
+    // 备选：如果使用 Pipeline 脚本直接定义
+    // definition {
+    //     cps {
+    //         script('''
+    //             pipeline {
+    //                 agent any
+    //                 stages {
+    //                     stage('Checkout') {
+    //                         steps {
+    //                             checkout([
+    //                                 $class: 'GitSCM',
+    //                                 branches: [[name: '*/main']],
+    //                                 userRemoteConfigs: [[
+    //                                     url: 'https://github.com/bobwei192-star/pipeline.git',
+    //                                     credentialsId: 'github-pat-credentials'
+    //                                 ]]
+    //                             ])
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         '''.stripIndent())
+    //     }
+    // }
+}
