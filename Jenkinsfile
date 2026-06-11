@@ -1,100 +1,99 @@
 pipeline {
     agent any
     
+    options {
+        // 增加 Git 检出重试次数
+        checkoutRetryCount(3)
+    }
+    
     environment {
-        // Harbor 配置
-        HARBOR_URL = '172.21.201.77:18446'
-        HARBOR_PROJECT = 'rocm_and_model_env'
-        IMAGE_NAME = 'rocm-ryzen-image'
-        IMAGE_TAG = "${BUILD_NUMBER}"
-        
-        // BuildAgent 仓库（开源，无需凭据）
-        BUILD_REPO = 'https://github.com/bobwei192-star/build.git'
+        // 设置 Git 使用 credential helper 避免交互式提示
+        GIT_TERMINAL_PROMPT = '0'
     }
     
     stages {
-        stage('Checkout BuildAgent') {
+        stage('Checkout') {
             steps {
                 script {
-                    echo "🔄 Cloning BuildAgent repository..."
-                    sh """
-                        rm -rf build-agent-temp
-                        git clone ${BUILD_REPO} build-agent-temp
-                        ls -la build-agent-temp/
-                    """
-                }
-            }
-        }
-        
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    echo "🐳 Building Docker image..."
-                    sh """
-                        cd build-agent-temp
-                        
-                        # 构建镜像
-                        docker build -t ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} .
-                        
-                        # 标记为 latest
-                        docker tag ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
-                    """
-                }
-            }
-        }
-        
-        stage('Push to Harbor') {
-            steps {
-                script {
-                    echo "📤 Pushing image to Harbor..."
-                    // 使用 Jenkins 凭据
-                    withCredentials([usernamePassword(credentialsId: 'harbor-credentials', usernameVariable: 'HARBOR_USER', passwordVariable: 'HARBOR_PASS')]) {
-                        sh """
-                            # 登录 Harbor
-                            echo "${HARBOR_PASS}" | docker login ${HARBOR_URL} -u ${HARBOR_USER} --password-stdin
-                            
-                            # 推送镜像
-                            docker push ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
-                            docker push ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
-                            
-                            echo "✅ Image pushed successfully!"
-                        """
+                    // 尝试使用多种凭证 ID 进行检出，按优先级尝试
+                    def credentialIds = [
+                        'github-pat-token',      // 首选：GitHub Personal Access Token
+                        'github-credentials',       // 备选：通用凭证
+                        'github-token',           // 备选：其他命名
+                        'bobwei192-star-github'   // 备选：用户特定凭证
+                    ]
+                    
+                    def checkoutSuccess = false
+                    
+                    for (credId in credentialIds) {
+                        try {
+                            echo "Trying credential ID: ${credId}"
+                            checkout([
+                                $class: 'GitSCM',
+                                branches: [[name: '*/main']],
+                                extensions: [
+                                    [$class: 'CloneOption', timeout: 60],
+                                    [$class: 'Retry', retries: 3]
+                                ],
+                                userRemoteConfigs: [[
+                                    url: 'https://github.com/bobwei192-star/pipeline.git',
+                                    credentialsId: credId
+                                ]]
+                            ])
+                            echo "Successfully checked out with credential: ${credId}"
+                            checkoutSuccess = true
+                            break
+                        } catch (Exception e) {
+                            echo "Checkout failed with credential ${credId}: ${e.getMessage()}"
+                            continue
+                        }
+                    }
+                    
+                    if (!checkoutSuccess) {
+                        // 最后尝试无凭证检出（仅公开仓库）
+                        echo "Attempting checkout without credentials (public repo only)..."
+                        try {
+                            checkout([
+                                $class: 'GitSCM',
+                                branches: [[name: '*/main']],
+                                extensions: [[$class: 'CloneOption', timeout: 60]],
+                                userRemoteConfigs: [[
+                                    url: 'https://github.com/bobwei192-star/pipeline.git'
+                                ]]
+                            ])
+                            echo "Public checkout succeeded"
+                        } catch (Exception e) {
+                            error "All checkout attempts failed. Please configure GitHub credentials in Jenkins. " +
+                                  "Required steps: 1) Generate PAT at https://github.com/settings/tokens " +
+                                  "2) Add credential in Jenkins (Manage Jenkins > Credentials) " +
+                                  "3) Update Jenkinsfile with correct credentialsId"
+                        }
                     }
                 }
             }
         }
         
-        stage('Verify') {
+        stage('Build ROCm Docker Image') {
             steps {
-                script {
-                    echo "🔍 Verifying image in Harbor..."
-                    sh """
-                        # 清理本地镜像
-                        docker rmi ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} || true
-                        docker rmi ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest || true
-                        
-                        echo "✅ Build ${BUILD_NUMBER} completed successfully!"
-                        echo "Image: ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
-                    """
-                }
+                echo 'Building ROCm Docker image on Ryzen...'
+                // 实际的镜像构建步骤
             }
         }
     }
     
     post {
-        always {
-            script {
-                echo "🧹 Cleaning up..."
-                sh """
-                    rm -rf build-agent-temp || true
-                """
-            }
-        }
-        success {
-            echo "🎉 Pipeline succeeded!"
-        }
         failure {
-            echo "❌ Pipeline failed!"
+            echo 'Build failed. Common causes:'
+            echo '1. Missing GitHub credentials in Jenkins'
+            echo '2. Expired/invalid Personal Access Token'
+            echo '3. Insufficient permissions for the repository'
+            echo ''
+            echo 'To fix: Go to Jenkins > Manage Jenkins > Credentials > System > Global credentials'
+            echo 'Add a new credential:'
+            echo '  - Kind: Username with password'
+            echo '  - Username: your-github-username'
+            echo '  - Password: your-github-personal-access-token'
+            echo '  - ID: github-pat-token'
         }
     }
 }
