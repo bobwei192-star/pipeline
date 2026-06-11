@@ -1,0 +1,26 @@
+# 该问题涉及 Jenkins 服务端配置，无法通过代码文件直接修复
+# 以下为必要的排查和修复步骤：
+
+1. 检查 Jenkins 凭据管理
+   - 进入 Jenkins -> Manage Jenkins -> Credentials
+   - 确认是否存在访问 github.com 的有效凭据
+   - 如果是 GitHub，必须使用 Personal Access Token (PAT) 或 SSH Key，不能使用密码
+
+2. 更新 Job 配置
+   - 进入 Job 配置页面
+   - 在 'Pipeline' -> 'Definition' (选择 Pipeline script from SCM)
+   - 在 'SCM' -> 'Git' 设置中
+   - 'Credentials' 下拉框中选择有效的凭据
+   - 确保 'Repository URL' 正确
+
+3. 如果使用 JJB (Job Builder) 定义，需修改 YAML 配置：
+   scm:
+     - git:
+         url: 'https://github.com/bobwei192-star/pipeline.git'
+         credentials-id: 'your-github-credential-id'  # 关键：添加此行
+         branches:
+           - '*/main'
+
+4. 验证凭据有效性
+   - 如果使用 PAT，确认 Token 未过期且包含 'repo' 权限
+   - 如果使用 SSH，确认公钥已添加到 GitHub 账户
