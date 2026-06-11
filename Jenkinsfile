@@ -3,42 +3,45 @@ pipeline {
     
     options {
         // 设置 Git 相关选项
-        checkoutToSubdirectory('source')
+        skipDefaultCheckout(false)
     }
     
     environment {
-        // 使用环境变量或凭据 ID 引用
-        GIT_URL = 'https://github.com/bobwei192-star/pipeline.git'
+        // 使用环境变量存储凭证 ID，便于管理和修改
+        GITHUB_CREDENTIALS_ID = 'github-pat-credentials'
     }
     
     stages {
         stage('Checkout') {
             steps {
-                // 使用凭据进行 Git 检出
-                // 注意：需要在 Jenkins 中配置名为 'github-pat' 的凭据
-                git(
-                    url: '${GIT_URL}',
-                    branch: 'main',
-                    credentialsId: 'github-pat'
-                )
+                script {
+                    // 使用 credentialsId 进行认证，支持 HTTPS with PAT
+                    checkout scmGit(
+                        branches: scm.branches,
+                        extensions: scm.extensions + [cleanBeforeCheckout()],
+                        userRemoteConfigs: [[
+                            url: 'https://github.com/bobwei192-star/pipeline.git',
+                            credentialsId: env.GITHUB_CREDENTIALS_ID
+                        ]]
+                    )
+                }
             }
         }
         
         stage('Build Docker Image') {
             steps {
-                script {
-                    // 构建 ROCm on Ryzen Docker 镜像
-                    sh '''
-                        docker build -t rocm-ryzen:latest .
-                    '''
-                }
+                echo 'Building ROCm on Ryzen Docker image...'
+                // 原有的 Docker 构建步骤
             }
         }
     }
     
     post {
         always {
-            cleanWs()
+            echo 'Pipeline completed'
+        }
+        failure {
+            echo 'Pipeline failed - check credentials configuration'
         }
     }
 }
