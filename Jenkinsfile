@@ -1,43 +1,54 @@
 pipeline {
     agent any
-
+    
     environment {
-        // 定义凭据 ID，需要在 Jenkins -> Credentials 中预先配置
-        // 类型建议: Username with password (GitHub 用户名 + Personal Access Token)
-        GITHUB_CREDS = credentials('github-pipeline-creds')
+        // 使用 Jenkins 凭据存储中的 GitHub PAT
+        // 需要在 Jenkins 中预先配置凭据 ID 为 'github-pat' 的 Secret text 凭据
+        GITHUB_CREDENTIALS = credentials('github-pat')
     }
-
+    
+    options {
+        // 设置 SCM 检出重试次数
+        checkoutRetryCount(3)
+        // 禁用默认检出，使用自定义检出步骤
+        skipDefaultCheckout(true)
+    }
+    
     stages {
         stage('Checkout') {
             steps {
                 script {
-                    // 使用 withCredentials 绑定凭据进行 Git 操作
-                    // 或者直接在 checkout 步骤中指定 credentialsId
+                    // 使用凭据进行 Git 检出
+                    // 需要在 Jenkins 中配置凭据 ID，这里使用 'github-pat' 作为示例
+                    // 实际使用时需要在 Jenkins 中创建对应凭据
                     checkout([
                         $class: 'GitSCM',
-                        branches: [[name: '*/main']], // 请根据实际分支修改，如 master 或 main
-                        doGenerateSubmoduleConfigurations: false,
-                        extensions: [],
-                        submoduleCfg: [],
+                        branches: [[name: '*/main']],
+                        extensions: [
+                            [$class: 'CloneOption', depth: 1, noTags: false, shallow: true],
+                            [$class: 'CheckoutOption', timeout: 30]
+                        ],
                         userRemoteConfigs: [[
                             url: 'https://github.com/bobwei192-star/pipeline.git',
-                            // 关键修复: 添加 credentialsId
-                            credentialsId: 'github-pipeline-creds'
+                            credentialsId: 'github-pat'
                         ]]
                     ])
                 }
             }
         }
-
-        stage('Build & Push Docker Image') {
+        
+        stage('Build') {
             steps {
-                script {
-                    echo "Building Docker Image..."
-                    // 此处为原有构建逻辑占位符
-                    // sh 'docker build -t rocm-on-ryzen .'
-                    // sh 'docker push ...'
-                }
+                echo 'Building...'
+                // 添加实际的构建步骤
             }
+        }
+    }
+    
+    post {
+        failure {
+            echo 'Build failed. Please check GitHub credentials configuration.'
+            echo 'Ensure Jenkins credential with ID "github-pat" exists and contains a valid GitHub Personal Access Token.'
         }
     }
 }
