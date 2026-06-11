@@ -1,0 +1,49 @@
+job:
+  name: rocm_on_ryzen_docker_image_build
+  project-type: pipeline
+  description: 'Build ROCm on Ryzen Docker image'
+  
+  properties:
+    - build-discarder:
+        num-to-keep: 10
+        artifact-num-to-keep: 5
+  
+  # 定义凭证参数，用于 GitHub 认证
+  parameters:
+    - string:
+        name: GITHUB_TOKEN
+        default: ''
+        description: 'GitHub Personal Access Token for repository access'
+        trim: true
+  
+  pipeline-scm:
+    scm:
+      - git:
+          url: https://github.com/bobwei192-star/pipeline.git
+          # 使用 Jenkins 凭证 ID 进行认证
+          # 需要在 Jenkins 中预先配置凭证：
+          # 1. 进入 Manage Jenkins -> Manage Credentials
+          # 2. 添加凭据 -> Username with password
+          #    Username: 你的 GitHub 用户名
+          #    Password: GitHub Personal Access Token (classic 或 fine-grained)
+          #    ID: github-pat-credentials
+          credentials-id: github-pat-credentials
+          branches:
+            - '*/main'
+            - '*/master'
+          # 设置较短的 shallow clone 深度以加速获取
+          shallow-clone: true
+          depth: 10
+          # 增加超时时间
+          timeout: 30
+    script-path: Jenkinsfile
+    lightweight-checkout: true
+  
+  triggers: []
+  
+  # 如果需要，可以添加包装器来注入凭证
+  wrappers:
+    - credentials-binding:
+        - text:
+            credential-id: github-pat-credentials
+            variable: GITHUB_TOKEN
