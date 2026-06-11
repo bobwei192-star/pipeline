@@ -1,0 +1,32 @@
+/*
+ * 修复说明：
+ * 1. 此错误发生在 Jenkinsfile 加载前的 SCM Checkout 阶段，无法通过修改 Jenkinsfile 内容来解决。
+ * 2. 必须修改 Job 的配置（JJB YAML 或 Jenkins UI 配置）。
+ * 3. 以下是修复此问题所需的 JJB YAML 配置示例。
+ * 4. 请确保 Jenkins 中已存在名为 'github-ssh-key' 或 'github-pat' 的凭据。
+ */
+
+- job:
+    name: rocm_on_ryzen_docker_image_build
+    project-type: pipeline
+    # 方案 A: 使用 SSH 协议 (推荐)
+    pipeline-scm:
+      scm:
+        - git:
+            url: git@github.com:bobwei192-star/pipeline.git
+            credentials-id: github-ssh-key  # 请替换为实际的 Jenkins SSH 凭据 ID
+            branches:
+              - branch: "*/main"
+      script-path: Jenkinsfile
+      lightweight-checkout: true
+
+    # 方案 B: 使用 HTTPS + PAT Token (备选)
+    # pipeline-scm:
+    #   scm:
+    #     - git:
+    #         url: https://github.com/bobwei192-star/pipeline.git
+    #         credentials-id: github-pat  # 请替换为实际的 Jenkins Username/Password (PAT) 凭据 ID
+    #         branches:
+    #           - branch: "*/main"
+    #   script-path: Jenkinsfile
+    #   lightweight-checkout: true
