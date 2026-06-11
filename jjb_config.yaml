@@ -1,0 +1,27 @@
+job:
+  name: rocm_on_ryzen_docker_image_build
+  project-type: pipeline
+  dsl: |
+    pipeline {
+        agent any
+        stages {
+            stage('Checkout') {
+                steps {
+                    // 必须指定 credentialsId 以访问私有仓库
+                    // 请确保 Jenkins 凭证管理中存在 ID 为 'github-ssh-key' 或 'github-https-token' 的凭证
+                    git url: 'https://github.com/bobwei192-star/pipeline.git', 
+                        branch: 'main', 
+                        credentialsId: 'github-https-token'
+                }
+            }
+            stage('Build Docker Image') {
+                steps {
+                    script {
+                        echo 'Building Docker image...'
+                        // 添加构建逻辑
+                    }
+                }
+            }
+        }
+    }
+  sandbox: false
