@@ -1,0 +1,71 @@
+/* 这是一个 Jenkins 配置问题，无法通过修改单个文件完全修复。
+   需要在 Jenkins 中配置凭据并在 JJB YAML 或 Jenkinsfile 中引用。
+   以下是推荐的 JJB YAML 配置方式，假设使用 Jenkins Job Builder 管理 Job */
+
+- job:
+    name: rocm_on_ryzen_docker_image_build
+    project-type: pipeline
+    properties:
+      - build-discarder:
+          num-to-keep: '10'
+    pipeline-scm:
+      scm:
+        - git:
+            url: https://github.com/bobwei192-star/pipeline.git
+            credentials-id: github-pat-credentials  # 需要在 Jenkins 中预先配置此凭据
+            branches:
+              - '*/main'  # 或实际使用的分支
+      script-path: Jenkinsfile
+      lightweight-checkout: true
+    
+---
+
+/* 或者如果是 Jenkinsfile 内定义的多分支流水线/流水线 Job，
+   需要在 Jenkins 系统配置或 Job 配置中指定凭据。
+   以下是示例 Jenkinsfile 片段，展示如何在 checkout 时指定凭据 */
+
+// Jenkinsfile 示例 - 显式指定凭据进行 checkout
+pipeline {
+    agent any
+    options {
+        // 使用指定的凭据进行 SCM 检出
+        skipDefaultCheckout(true)
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scmGit(
+                    branches: [[name: '*/main']],  // 或实际分支
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/bobwei192-star/pipeline.git',
+                        credentialsId: 'github-pat-credentials'  // 替换为实际的凭据 ID
+                    ]]
+                )
+            }
+        }
+        // ... 其他阶段
+    }
+}
+
+---
+
+/* 如果当前是自由风格 Job 或通过 JJB 定义，以下是完整的 JJB YAML 修复方案 */
+
+- job:
+    name: rocm_on_ryzen_docker_image_build
+    description: 'Build ROCm on Ryzen Docker image'
+    project-type: pipeline
+    properties:
+      - build-discarder:
+          num-to-keep: '10'
+    pipeline-scm:
+      scm:
+        - git:
+            url: https://github.com/bobwei192-star/pipeline.git
+            credentials-id: github-pat-credentials
+            branches:
+              - '*/main'
+            browser: auto
+            timeout: 20
+      script-path: Jenkinsfile
+      lightweight-checkout: true
