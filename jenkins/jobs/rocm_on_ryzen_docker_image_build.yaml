@@ -1,0 +1,31 @@
+job:
+  name: rocm_on_ryzen_docker_image_build
+  project-type: pipeline
+  dsl:
+    script-text: |
+      pipeline {
+          agent any
+          stages {
+              stage('Checkout') {
+                  steps {
+                      script {
+                          // Fix: Explicitly define SCM with credentials to avoid 'No credentials specified' error.
+                          // Replace 'github-ssh-key' or 'github-https-token' with your actual Jenkins credential ID.
+                          // Option 1: SSH (Recommended)
+                          // checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'git@github.com:bobwei192-star/pipeline.git', credentialsId: 'github-ssh-key']]])
+                          
+                          // Option 2: HTTPS with Token
+                          checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/bobwei192-star/pipeline.git', credentialsId: 'github-https-token']]])
+                      }
+                  }
+              }
+              stage('Build') {
+                  steps {
+                      script {
+                          echo 'Building Docker image...'
+                      }
+                  }
+              }
+          }
+      }
+    sandbox: false
