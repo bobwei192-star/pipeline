@@ -1,71 +1,71 @@
-/* Jenkinsfile - 使用 withCredentials 注入 GitHub 个人访问令牌 */
-/* 需要在 Jenkins 中预先配置 'github-pat' 凭据 (类型: Secret text 或 Username with password) */
-
 pipeline {
     agent any
     
-    environment {
-        /* 可选：配置 Git 使用凭证助手或显式 URL */
-        GIT_URL = 'https://github.com/bobwei192-star/pipeline.git'
+    options {
+        // 增加 SCM 检出重试次数
+        checkoutRetryCount(5)
+        // 设置超时时间
+        timeout(time: 30, unit: 'MINUTES')
     }
     
-    options {
-        /* 增加检出重试次数 */
-        retry(3)
-        timeout(time: 30, unit: 'MINUTES')
+    environment {
+        // 使用环境变量传递凭据 ID，便于不同环境配置
+        GIT_CREDENTIALS_ID = credentials('github-pat-credentials')
     }
     
     stages {
         stage('Checkout with Credentials') {
             steps {
                 script {
-                    /* 方法1: 使用 withCredentials 注入 PAT 到 URL */
-                    withCredentials([string(credentialsId: 'github-pat', variable: 'GITHUB_TOKEN')]) {
-                        /* 清理并重新配置 Git URL 包含令牌 */
-                        sh '''
-                            git config --global credential.helper store || true
-                            git config --global --unset-all http.https://github.com/.extraheader || true
-                        '''
-                        
-                        /* 使用带令牌的 URL 进行检出 */
-                        checkout([
-                            $class: 'GitSCM',
-                            branches: [[name: '*/main'], [name: '*/master']],
-                            extensions: [
-                                [$class: 'CloneOption', 
-                                 depth: 1, 
-                                 noTags: false, 
-                                 shallow: true,
-                                 timeout: 30
-                                ],
-                                [$class: 'CleanBeforeCheckout'],
-                                [$class: 'WipeWorkspace']
-                            ],
-                            userRemoteConfigs: [[
-                                url: "https://${GITHUB_TOKEN}@github.com/bobwei192-star/pipeline.git",
-                                credentialsId: 'github-pat'
-                            ]]
-                        ])
-                    }
+                    // 尝试使用凭据检出代码
+                    // 需要在 Jenkins 凭据管理中预先配置 'github-pat-credentials'
+                    // 凭据类型: Username with password
+                    // Username: GitHub 用户名
+                    // Password: GitHub Personal Access Token (classic 或 fine-grained)
+                    // Token 权限需要: repo (访问私有仓库)
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: '*/main']],  // 根据实际分支修改
+                        extensions: [
+                            [$class: 'CloneOption', 
+                             depth: 1, 
+                             noTags: false, 
+                             shallow: true,
+                             timeout: 30],
+                            [$class: 'CheckoutOption', timeout: 30],
+                            // 清理工作区避免冲突
+                            [$class: 'CleanBeforeCheckout'],
+                            [$class: 'WipeWorkspace']
+                        ],
+                        userRemoteConfigs: [[
+                            url: 'https://github.com/bobwei192-star/pipeline.git',
+                            credentialsId: 'github-pat-credentials'
+                        ]]
+                    ])
                 }
             }
         }
         
-        stage('Alternative Checkout - Direct Git') {
-            /* 如果上述方法失败，使用直接 git 命令 */
+        // 如果上述方式失败，提供备选方案：使用 GitHub App 凭据
+        stage('Alternative: GitHub App Checkout') {
             when {
-                expression { false }  /* 默认禁用，需要时手动启用 */
+                expression { currentBuild.result == 'FAILURE' }
             }
             steps {
                 script {
-                    withCredentials([string(credentialsId: 'github-pat', variable: 'GITHUB_TOKEN')]) {
-                        sh '''
-                            rm -rf .git pipeline || true
-                            git clone --depth 1 "https://${GITHUB_TOKEN}@github.com/bobwei192-star/pipeline.git" pipeline || true
-                            cp -r pipeline/. .
-                            rm -rf pipeline
-                        '''
-                    }
+                    // 备选：使用 GitHub App 凭据（更安全的推荐方式）
+                    // 需要在 Jenkins 凭据管理中配置 GitHub App 凭据
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: '*/main']],
+                        extensions: [
+                            [$class: 'CloneOption', depth: 1, shallow: true, timeout: 30]
+                        ],
+                        userRemoteConfigs: [[
+                            url: 'https://github.com/bobwei192-star/pipeline.git',
+                            credentialsId: 'github-app-credentials'
+                        ]]
+                    ])
                 }
             }
         }
@@ -73,13 +73,19 @@ pipeline {
     
     post {
         failure {
-            script {
-                echo "检出失败，请检查:"
-                echo "1. Jenkins 凭据 'github-pat' 是否已创建"
-                echo "2. GitHub PAT 是否有 'repo' 权限"
-                echo "3. 仓库 URL 是否正确"
-                echo "4. 如果是公开仓库，尝试删除 credentialsId 配置"
-            }
+            echo '构建失败，可能原因：'
+            echo '1. 凭据 ID 不存在或配置错误'
+            echo '2. GitHub PAT 已过期或被撤销'
+            echo '3. PAT 权限不足（需要 repo 权限）'
+            echo '4. 仓库 URL 错误或仓库不存在/不可访问'
+            echo ''
+            echo '修复步骤：'
+            echo '1. 在 Jenkins 中创建凭据：Manage Jenkins > Manage Credentials'
+            echo '2. 添加 "Username with password" 类型凭据'
+            echo '3. Username: GitHub 用户名'
+            echo '4. Password: GitHub Personal Access Token（不是登录密码）'
+            echo '5. 生成 PAT: GitHub Settings > Developer settings > Personal access tokens'
+            echo '6. 确保 PAT 有 repo 权限'
         }
     }
 }
