@@ -1,0 +1,127 @@
+/* 由于未获取到 Pipeline 配置文件，以下为基于 JJB YAML 格式的修复方案。
+   核心修复：为 Git SCM 配置添加 credentialsId，指向 Jenkins 中已配置的 GitHub PAT 凭证。
+   需要在 Jenkins 凭据管理器中预先创建 'github-pat-credentials' 凭证（类型：Username with password，用户名任意，密码为 GitHub Personal Access Token）。
+
+   如果原配置为 JJB YAML 格式，参考以下修复： */
+
+- job:
+    name: rocm_on_ryzen_docker_image_build
+    description: 'Build ROCm on Ryzen Docker image'
+    project-type: pipeline
+    concurrent: false
+    
+    properties:
+      - build-discarder:
+          num-to-keep: 10
+    
+    /* 关键修复：添加 SCM 凭证配置 */
+    scm:
+      - git:
+          url: 'https://github.com/bobwei192-star/pipeline.git'
+          credentials-id: 'github-pat-credentials'  /* 必须预先在 Jenkins 中创建此凭证 */
+          branches:
+            - '*/main'
+          clean:
+            before: true
+    
+    pipeline-scm:
+      script-path: Jenkinsfile
+      lightweight-checkout: true
+      scm:
+        - git:
+            url: 'https://github.com/bobwei192-star/pipeline.git'
+            credentials-id: 'github-pat-credentials'  /* 关键修复：指定 GitHub PAT 凭证 */
+            branches:
+              - '*/main'
+            clean:
+              before: true
+
+/* ============================================
+   备选方案：如果原配置为纯 Jenkinsfile（声明式 Pipeline）
+   且使用 checkout scm 步骤，需在 Jenkins 作业配置中
+   设置 SCM 凭证，或在 Jenkinsfile 中显式指定：
+   ============================================ */
+
+/* Jenkinsfile 修复方案（声明式） */
+pipeline {
+    agent any
+    
+    options {
+        /* 重试策略，避免临时网络问题 */
+        retry(3)
+        timeout(time: 30, unit: 'MINUTES')
+    }
+    
+    /* 关键修复：环境变量中引用凭证 */
+    environment {
+        GITHUB_TOKEN = credentials('github-pat-credentials')
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                /* 关键修复：使用 credentialsId 进行显式 checkout */
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    extensions: [],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/bobwei192-star/pipeline.git',
+                        credentialsId: 'github-pat-credentials'  /* 关键修复 */
+                    ]]
+                ])
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                script {
+                    /* 原有构建步骤 */
+                    echo 'Building ROCm on Ryzen Docker image...'
+                }
+            }
+        }
+    }
+    
+    post {
+        failure {
+            echo 'Build failed. Check GitHub token validity and permissions.'
+        }
+    }
+}
+
+/* ============================================
+   备选方案：如果仓库为公开仓库但误配置为需要凭证
+   可尝试移除凭证要求（仅当仓库确实公开时适用）
+   ============================================ */
+
+/* 公开仓库的简化配置（无需 credentialsId） */
+- job:
+    name: rocm_on_ryzen_docker_image_build
+    project-type: pipeline
+    
+    pipeline-scm:
+      script-path: Jenkinsfile
+      scm:
+        - git:
+            url: 'https://github.com/bobwei192-star/pipeline.git'
+            /* 不指定 credentials-id，用于公开仓库 */
+            branches:
+              - '*/main'
+
+/* ============================================
+   Jenkins 凭证创建命令（供管理员参考）：
+   
+   1. 生成 GitHub PAT：
+      - 访问 https://github.com/settings/tokens
+      - 点击 "Generate new token (classic)"
+      - 选择 scopes: repo（私有仓库需要）
+   
+   2. 在 Jenkins 中添加凭证：
+      Manage Jenkins → Manage Credentials → System → Global credentials → Add Credentials
+      - Kind: Username with password
+      - Username: 任意值（如 git）或 GitHub 用户名
+      - Password: 粘贴 GitHub PAT
+      - ID: github-pat-credentials（与配置中的 credentialsId 匹配）
+      - Description: GitHub PAT for pipeline repo
+   ============================================ */
