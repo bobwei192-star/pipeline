@@ -1,39 +1,30 @@
 pipeline {
     agent any
     
-    options {
-        // 设置 Git 检出行为，使用更稳定的配置
-        checkoutToSubdirectory('source')
+    environment {
+        // 使用 Jenkins 凭据 ID，需要在 Jenkins 中配置对应的凭据
+        GIT_CREDENTIALS_ID = 'github-pat-credentials'
     }
     
-    environment {
-        // 可选：如果使用 PAT 作为环境变量，可以通过这种方式传递
-        // GIT_TOKEN = credentials('github-pat-token')
+    options {
+        // 设置 Git 检出选项
+        skipDefaultCheckout(false)
     }
     
     stages {
         stage('Checkout') {
             steps {
-                // 使用 credentialsId 指定 Jenkins 中配置的凭据
-                // 需要在 Jenkins 中预先创建凭据：
-                // 1. 进入 Jenkins -> Manage Jenkins -> Credentials
-                // 2. 添加凭据 -> Username with password
-                //    - Username: GitHub 用户名
-                //    - Password: GitHub Personal Access Token (不是密码)
-                //    - ID: github-pat-credentials (或您喜欢的 ID)
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/main']], // 根据实际分支修改
-                    extensions: [
-                        [$class: 'CloneOption', depth: 1, noTags: false, shallow: true, timeout: 30],
-                        [$class: 'CleanBeforeCheckout'],
-                        [$class: 'WipeWorkspace']
-                    ],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/bobwei192-star/pipeline.git',
-                        credentialsId: 'github-pat-credentials'  // 替换为实际的凭据 ID
-                    ]]
-                ])
+                script {
+                    // 使用凭据检出代码
+                    checkout scmGit(
+                        branches: scm.branches,
+                        extensions: [],
+                        userRemoteConfigs: [[
+                            url: 'https://github.com/bobwei192-star/pipeline.git',
+                            credentialsId: env.GIT_CREDENTIALS_ID
+                        ]]
+                    )
+                }
             }
         }
         
@@ -43,7 +34,8 @@ pipeline {
                     // 构建 ROCm on Ryzen Docker 镜像
                     sh '''
                         echo "Building ROCm on Ryzen Docker image..."
-                        # 添加实际的构建命令
+                        # Docker 构建命令
+                        docker build -t rocm-ryzen:latest .
                     '''
                 }
             }
@@ -52,10 +44,15 @@ pipeline {
     
     post {
         always {
-            cleanWs()
+            script {
+                // 清理工作区
+                cleanWs()
+            }
         }
         failure {
-            echo 'Build failed. Please check the logs for details.'
+            script {
+                echo "Build failed. Please check Git credentials configuration."
+            }
         }
     }
 }
