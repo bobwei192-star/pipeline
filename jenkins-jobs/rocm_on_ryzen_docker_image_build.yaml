@@ -1,0 +1,68 @@
+job('rocm_on_ryzen_docker_image_build') {
+    description('Build ROCm on Ryzen Docker image')
+    
+    properties {
+        githubProjectUrl('https://github.com/bobwei192-star/pipeline.git')
+    }
+    
+    scm {
+        git {
+            remote {
+                github('bobwei192-star/pipeline', 'https')
+                // 使用 Jenkins 凭据 ID 进行认证
+                // 需要在 Jenkins 中预先配置以下凭据之一：
+                // 1. Username with Password: 用户名 + Personal Access Token (classic 或 fine-grained)
+                // 2. Secret text: Personal Access Token (使用 'git' 作为用户名)
+                credentials('github-pat-credentials')
+            }
+            branches('*/main', '*/master')
+            extensions {
+                wipeOutWorkspace()
+                cloneOptions {
+                    depth(1)
+                    shallow(true)
+                    timeout(10)
+                }
+            }
+        }
+    }
+    
+    wrappers {
+        // 添加重试逻辑
+        retryBuild {
+            retryLimit(3)
+            fixedDelay(30)
+        }
+        // 超时设置
+        timeout {
+            absolute(30)
+            failBuild()
+        }
+    }
+    
+    triggers {
+        scm('H/5 * * * *')
+    }
+    
+    steps {
+        shell('''
+            #!/bin/bash
+            set -euo pipefail
+            
+            echo "=== Build Environment ==="
+            echo "Git version: $(git --version)"
+            echo "Working directory: $(pwd)"
+            
+            # 验证 Git 配置
+            git config --global --list || true
+            
+            echo "=== Starting Docker Build ==="
+            # Docker build steps here
+        ''')
+    }
+    
+    publishers {
+        // 构建失败通知
+        mailer('admin@example.com', false, true)
+    }
+}
