@@ -1,0 +1,77 @@
+job:
+  name: rocm_on_ryzen_docker_image_build
+  description: 'Build ROCm Docker image on Ryzen'
+  project-type: pipeline
+  properties:
+    - build-discarder:
+        num-to-keep: 10
+  dsl: |
+    pipeline {
+        agent any
+        
+        options {
+            // 增加重试次数，但主要修复是凭证配置
+            checkoutRetryCount(3)
+        }
+        
+        environment {
+            // 可选：设置 Git 使用缓存凭证帮助程序（如果凭证已配置在 Jenkins 中）
+            GIT_ASKPASS = 'false'
+        }
+        
+        stages {
+            stage('Checkout') {
+                steps {
+                    // 使用 Jenkins 凭证进行 Git 检出
+                    // 需要在 Jenkins 中预先配置名为 'github-pat-credentials' 的凭证
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: '*/main']],
+                        doGenerateSubmoduleConfigurations: false,
+                        extensions: [],
+                        submoduleCfg: [],
+                        userRemoteConfigs: [[
+                            url: 'https://github.com/bobwei192-star/pipeline.git',
+                            credentialsId: 'github-pat-credentials'
+                        ]]
+                    ])
+                }
+            }
+            
+            stage('Build Docker Image') {
+                steps {
+                    script {
+                        // 构建逻辑放在这里
+                        echo 'Building ROCm Docker image on Ryzen...'
+                    }
+                }
+            }
+        }
+        
+        post {
+            failure {
+                echo 'Build failed. Please check credentials configuration.'
+            }
+        }
+    }
+
+# ============================================
+# JJB YAML 配置（用于 Jenkins Job Builder）
+# ============================================
+# 保存为: rocm_on_ryzen_docker_image_build.yaml
+#
+# 使用方式: jenkins-jobs update rocm_on_ryzen_docker_image_build.yaml
+#
+# 重要：在应用此配置前，请先在 Jenkins 中创建凭证：
+# 1. 进入 Jenkins -> Manage Jenkins -> Manage Credentials
+# 2. 选择适当的域（通常是 global）
+# 3. 点击 "Add Credentials"
+# 4. 类型选择: "Username with password"
+# 5. Username: 你的 GitHub 用户名
+# 6. Password: 你的 GitHub Personal Access Token (PAT)
+#    - 生成 PAT: GitHub -> Settings -> Developer settings -> Personal access tokens -> Tokens (classic)
+#    - 至少需要 'repo' 权限范围
+# 7. ID: 设置为 'github-pat-credentials'（与下方配置匹配）
+# 8. 保存凭证
+#
+# 替代方案：如果无法创建凭证，可以使用 SSH URL + SSH 凭证
