@@ -1,0 +1,82 @@
+job:
+  name: rocm_on_ryzen_docker_image_build
+  project-type: pipeline
+  description: 'Build ROCm on Ryzen Docker image'
+  
+  properties:
+    - github:
+        url: https://github.com/bobwei192-star/pipeline.git
+  
+  # 配置 SCM 使用凭证
+  pipeline-scm:
+    scm:
+      - git:
+          url: https://github.com/bobwei192-star/pipeline.git
+          credentials-id: github-pat-credentials
+          branches:
+            - '*/main'
+            - '*/master'
+          script-path: Jenkinsfile
+          lightweight-checkout: true
+    
+  # 或者使用 Pipeline 定义（如果需要在 Jenkinsfile 中处理）
+  # definition:
+  #   cps-scm:
+  #     scm:
+  #       - git:
+  #           url: https://github.com/bobwei192-star/pipeline.git
+  #           credentials-id: github-pat-credentials
+  #           branches:
+  #             - '*/main'
+  #           script-path: Jenkinsfile
+  
+  # 触发器配置
+  triggers:
+    - github
+  
+  # 构建参数
+  parameters:
+    - string:
+        name: DOCKER_REGISTRY
+        default: ''
+        description: 'Docker registry URL (optional)'
+    - string:
+        name: IMAGE_TAG
+        default: 'latest'
+        description: 'Docker image tag'
+  
+  # 包装器：确保环境变量可用
+  wrappers:
+    - credentials-binding:
+        - text:
+            credential-id: github-pat-credentials
+            variable: GITHUB_TOKEN
+    - timeout:
+        fail: true
+        minutes: 120
+  
+  # 构建节点标签
+  node: 'docker-enabled'
+  
+  # 如果需要直接在 JJB 中定义 pipeline 而非从 SCM 加载
+  # 可以使用以下方式作为临时方案，但推荐修复 SCM 凭证
+  # definition:
+  #   cps:
+  #     script: |
+  #       pipeline {
+  #         agent any
+  #         environment {
+  #           GITHUB_TOKEN = credentials('github-pat-credentials')
+  #         }
+  #         stages {
+  #           stage('Checkout') {
+  #             steps {
+  #               git url: 'https://github.com/bobwei192-star/pipeline.git',
+  #                   credentialsId: 'github-pat-credentials',
+  #                   branch: 'main'
+  #             }
+  #           }
+  #           // ... rest of pipeline
+  #         }
+  #       }
+  #     sandbox: true
