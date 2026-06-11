@@ -1,52 +1,44 @@
 pipeline {
     agent any
     
-    // 配置 Git 凭据 - 使用 Jenkins 凭据 ID
-    // 需要在 Jenkins 中预先配置凭据：
-    // 1. 进入 Jenkins 管理页面 -> Manage Jenkins -> Manage Credentials
-    // 2. 添加凭据：Username with password 类型
-    //    - Username: GitHub 用户名
-    //    - Password: GitHub Personal Access Token (classic 或 fine-grained)
-    //    - ID: github-pat-token (或自定义)
-    // 3. 确保该凭据有权限访问 bobwei192-star/pipeline 仓库
-    
     options {
-        // 设置 Git 检出选项
-        checkoutToSubdirectory('source')
-        // 禁用自动检出，使用自定义检出步骤
-        skipDefaultCheckout(true)
+        // 增加重试次数，避免因临时网络问题导致构建失败
+        retry(3)
     }
     
     environment {
-        // 可选：设置 Git 相关环境变量
-        GIT_SSL_NO_VERIFY = 'false'
+        // 使用环境变量或凭据来管理 Git 认证信息
+        // 需要在 Jenkins 中配置 'github-pat-credentials' 凭据（类型：Username with password，密码填 PAT）
+        GIT_URL = 'https://github.com/bobwei192-star/pipeline.git'
     }
     
     stages {
         stage('Checkout') {
             steps {
-                // 使用凭据进行 Git 检出
-                // 请将 'github-pat-token' 替换为实际的 Jenkins 凭据 ID
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/main']],
-                    extensions: [
-                        [$class: 'CloneOption', depth: 1, noTags: false, shallow: true, timeout: 30],
-                        [$class: 'CleanBeforeCheckout']
-                    ],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/bobwei192-star/pipeline.git',
-                        credentialsId: 'github-pat-token'
-                    ]]
-                ])
+                script {
+                    // 使用凭据进行代码拉取
+                    // 注意：需要在 Jenkins 中预先配置凭据 ID
+                    checkout scm: [
+                        $class: 'GitSCM',
+                        branches: [[name: '*/main']],
+                        extensions: [
+                            [$class: 'CloneOption', timeout: 30]
+                        ],
+                        userRemoteConfigs: [[
+                            url: env.GIT_URL,
+                            credentialsId: 'github-pat-credentials'
+                        ]]
+                    ]
+                }
             }
         }
         
         stage('Build Docker Image') {
             steps {
                 script {
-                    // 原有的 Docker 构建步骤
+                    // 原有的 Docker 构建逻辑
                     echo 'Building ROCm on Ryzen Docker image...'
+                    // 实际的构建命令需要根据原始 Jenkinsfile 补充
                 }
             }
         }
@@ -54,8 +46,12 @@ pipeline {
     
     post {
         failure {
-            echo 'Build failed. Please verify GitHub credentials are configured correctly.'
-            echo 'Ensure the Personal Access Token has repo scope permissions.'
+            script {
+                echo 'Build failed. Please check:'
+                echo '1. Ensure Jenkins credential "github-pat-credentials" exists with GitHub Personal Access Token'
+                echo '2. Verify the PAT has required scopes: repo, read:packages'
+                echo '3. Check if the repository URL is accessible from Jenkins agent'
+            }
         }
     }
 }
