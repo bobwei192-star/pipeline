@@ -1,0 +1,150 @@
+/*
+ * 由于未获取到原始 Jenkinsfile 或 JJB YAML 配置内容，
+ * 以下为基于错误日志推断的修复方案。
+ * 
+ * 问题：Jenkins 从 GitHub 拉取代码时缺少认证凭证
+ * 解决方案：需要在 Jenkins 配置中配置 GitHub 凭证
+ * 
+ * 步骤1：在 Jenkins 中创建凭证
+ * - 进入 Jenkins 管理界面 -> Manage Jenkins -> Manage Credentials
+ * - 选择适当的域（如 global），点击 "Add Credentials"
+ * - 类型选择："Username with password" 或 "Secret text"
+ * - 如果使用 Username with password: Username 填 GitHub 用户名，Password 填 Personal Access Token (PAT)
+ * - 如果使用 Secret text: 直接填入 PAT，ID 设为 'github-pat-token'
+ * - GitHub PAT 需要在 https://github.com/settings/tokens 生成，至少需要 'repo' 权限
+ * 
+ * 步骤2：在 Job 配置或 JJB YAML 中引用凭证
+ */
+
+// ============================================
+// 方案 A: 如果是 JJB (Jenkins Job Builder) YAML 配置
+// 请修改对应的 JJB YAML 文件，添加 credentials-id
+// ============================================
+
+// 示例 JJB YAML 修复（请根据实际文件修改）：
+/*
+- job:
+    name: rocm_on_ryzen_docker_image_build
+    project-type: pipeline
+    properties:
+      - github:
+          url: https://github.com/bobwei192-star/pipeline.git
+    pipeline-scm:
+      scm:
+        - git:
+            url: https://github.com/bobwei192-star/pipeline.git
+            credentials-id: github-pat-token  # <-- 添加这一行，使用你创建的凭证ID
+            branches:
+              - '*/main'  # 或 '*/master'，根据实际默认分支
+            clean: true
+            wipe-workspace: true
+      script-path: Jenkinsfile
+      lightweight-checkout: false
+    triggers:
+      - github
+*/
+
+// ============================================
+// 方案 B: 如果是 Jenkinsfile 中的 SCM 检出配置
+// 在 Jenkinsfile 中显式指定 credentialsId
+// ============================================
+
+// 示例 Jenkinsfile 修复片段：
+/*
+pipeline {
+    agent any
+    
+    options {
+        // 禁用默认的轻量级检出，确保完整检出
+        skipDefaultCheckout(true)
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                // 使用 credentialsId 进行认证检出
+                checkout scmGit(
+                    branches: [[name: '*/main']],  // 根据实际分支修改
+                    extensions: [],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/bobwei192-star/pipeline.git',
+                        credentialsId: 'github-pat-token'  // <-- 添加凭证ID
+                    ]]
+                )
+            }
+        }
+        
+        // ... 后续构建阶段
+    }
+}
+*/
+
+// ============================================
+// 方案 C: 如果是 Jenkins 自由风格项目或 Pipeline 的 SCM 配置
+// 在 Jenkins Web UI 中修改
+// ============================================
+
+/*
+1. 进入 job 配置页面: Jenkins -> rocm_on_ryzen_docker_image_build -> Configure
+2. 找到 "Pipeline" 或 "Source Code Management" 部分
+3. 在 Git 仓库 URL 下方，找到 "Credentials" 下拉框
+4. 选择已创建的凭证，或点击 "Add" 创建新凭证
+5. 保存配置
+*/
+
+// ============================================
+// 方案 D: 使用 SSH 协议替代 HTTPS（可选替代方案）
+// ============================================
+
+// 如果使用 SSH 密钥，可以修改仓库 URL：
+/*
+- job:
+    name: rocm_on_ryzen_docker_image_build
+    project-type: pipeline
+    pipeline-scm:
+      scm:
+        - git:
+            url: git@github.com:bobwei192-star/pipeline.git  # SSH URL
+            credentials-id: github-ssh-key  # SSH 私钥凭证ID
+            branches:
+              - '*/main'
+      script-path: Jenkinsfile
+*/
+
+// ============================================
+// 以下为完整的 JJB YAML 示例模板（供参考）
+// 请根据实际使用的文件进行修改
+// ============================================
+
+- job:
+    name: rocm_on_ryzen_docker_image_build
+    display-name: "ROCm on Ryzen Docker Image Build"
+    project-type: pipeline
+    description: "Build Docker image with ROCm support on Ryzen"
+    
+    properties:
+      - build-discarder:
+          num-to-keep: 10
+          artifact-num-to-keep: 5
+    
+    pipeline-scm:
+      scm:
+        - git:
+            url: https://github.com/bobwei192-star/pipeline.git
+            credentials-id: github-pat-token
+            branches:
+              - '*/main'
+            clean:
+              before: true
+            wipe-workspace: true
+            clone-timeout: 30
+      script-path: Jenkinsfile
+      lightweight-checkout: false
+    
+    triggers:
+      - pollscm:
+          cron: "H/15 * * * *"
+    
+    wrappers:
+      - timestamps
+      - ansicolor
