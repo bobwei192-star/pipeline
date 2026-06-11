@@ -1,0 +1,33 @@
+job:
+  name: 'rocm_on_ryzen_docker_image_build'
+  project-type: pipeline
+  description: 'Build ROCm on Ryzen Docker image'
+  properties:
+    - build-discarder:
+        num-to-keep: 10
+  # GitHub 凭据配置 - 必须在 Jenkins Credentials 中预先创建对应 ID 的凭据
+  scm:
+    - git:
+        url: 'https://github.com/bobwei192-star/pipeline.git'
+        credentials-id: 'github-pat-token'  # 必须在 Jenkins 凭据管理中创建此 ID 的凭据
+        branches:
+          - '*/main'
+        script-path: 'Jenkinsfile'
+  triggers:
+    - pollscm: 'H/5 * * * *'
+  wrappers:
+    - credentials-binding:
+        - text:
+            credential-id: 'github-pat-token'
+            variable: 'GITHUB_TOKEN'
+  # 或者在 Pipeline 定义中使用 checkout scm 并指定凭据
+  definition:
+    cps-scm:
+      scm:
+        - git:
+            url: 'https://github.com/bobwei192-star/pipeline.git'
+            credentials-id: 'github-pat-token'  # 必须在 Jenkins 凭据管理中创建此 ID 的凭据
+            branches:
+              - '*/main'
+      script-path: 'Jenkinsfile'
+      lightweight-checkout: false
