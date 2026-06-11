@@ -1,0 +1,67 @@
+job('rocm_on_ryzen_docker_image_build') {
+    description('Build ROCm on Ryzen Docker image')
+    
+    // 使用凭证 ID 进行 GitHub 认证
+    // 需要在 Jenkins 中预先配置以下凭证之一：
+    // 1. 'github-pat-credential' - GitHub Personal Access Token (推荐)
+    // 2. 'github-ssh-credential' - SSH 私钥
+    
+    properties {
+        // 禁用并发构建
+        disableConcurrentBuilds()
+    }
+    
+    scm {
+        git {
+            remote {
+                url('https://github.com/bobwei192-star/pipeline.git')
+                // 使用 GitHub PAT 凭证，请在 Jenkins 中创建并替换为实际凭证 ID
+                credentials('github-pat-credential')
+            }
+            branch('*/main')
+            extensions {
+                // 增加超时时间，避免网络问题导致拉取失败
+                cloneOptions {
+                    timeout(30)
+                }
+            }
+        }
+    }
+    
+    triggers {
+        // 可选：定时轮询或 webhook 触发
+        scm('H/5 * * * *')
+    }
+    
+    wrappers {
+        // 添加超时控制
+        timeout {
+            absolute(60)
+        }
+        // 添加构建日志输出
+        timestamps()
+    }
+    
+    steps {
+        shell('''
+#!/bin/bash
+set -e
+
+echo "=== Build Environment ==="
+echo "Git version: $(git --version)"
+echo "Working directory: $(pwd)"
+
+# 验证 git 配置
+git config --global --get user.email || true
+git config --global --get user.name || true
+
+echo "=== Starting Docker image build ==="
+# 实际的构建步骤在此处执行
+        ''')
+    }
+    
+    publishers {
+        // 构建失败时发送通知
+        mailer('admin@example.com', false, false)
+    }
+}
