@@ -2,6 +2,8 @@
 # 从 Pipeline 控制端 SSH 到测试机，切换 GRUB 并 reboot（确保 Slave 进 PE 或 SUT）
 #   ./ensure_slave_in_pe.sh -i 172.31.8.5 -v              # → PE（默认菜单 0）
 #   ./ensure_slave_in_pe.sh -i 172.31.8.5 -o sut         # → SUT 26.04（GRUB_SUT_ENTRY）
+#
+# 优先 sshpass；无 sshpass 时用 SSH_ASKPASS（Built-In 容器常无 sshpass）
 
 set -euo pipefail
 
@@ -13,6 +15,7 @@ GRUB_PE_ENTRY="${GRUB_PE_ENTRY:-0}"
 GRUB_SUT_ENTRY="${GRUB_SUT_ENTRY:-osprober-gnulinux-simple-c0b61a7e-8069-47df-8f09-2fa33abb81ac}"
 PE_PART_DEV="${PE_PART_DEV:-/dev/nvme0n1p2}"
 WAIT_SSH_SEC="${WAIT_SSH_SEC:-600}"
+ASKPASS_FILE=""
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
@@ -47,10 +50,43 @@ done
 [[ -n "${SSH_TARGET}" && -n "${MODE}" ]] || usage
 [[ -n "${SSH_PASS}" ]] || die "SSH password required (-p or PE_SSH_PASS)"
 
-SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15)
+SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15
+  -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1)
 
-ssh_run() {
-  sshpass -p "${SSH_PASS}" ssh -T "${SSH_OPTS[@]}" "${SSH_USER}@${SSH_TARGET}" "$@"
+cleanup_askpass() {
+  [[ -n "${ASKPASS_FILE}" && -f "${ASKPASS_FILE}" ]] && rm -f "${ASKPASS_FILE}" || true
+}
+trap cleanup_askpass EXIT
+
+setup_askpass() {
+  ASKPASS_FILE="$(mktemp)"
+  cat > "${ASKPASS_FILE}" <<ASK
+#!/bin/sh
+printf '%s\n' '${SSH_PASS}'
+ASK
+  chmod 700 "${ASKPASS_FILE}"
+}
+
+# ssh 封装：有 sshpass 用 sshpass，否则 SSH_ASKPASS + setsid
+ssh_exec() {
+  local -a cmd=(ssh -T "${SSH_OPTS[@]}" "${SSH_USER}@${SSH_TARGET}")
+  if command -v sshpass >/dev/null 2>&1; then
+    sshpass -p "${SSH_PASS}" "${cmd[@]}" "$@"
+  else
+    setup_askpass
+    DISPLAY="${DISPLAY:-:0}" SSH_ASKPASS="${ASKPASS_FILE}" SSH_ASKPASS_REQUIRE=force \
+      setsid -w "${cmd[@]}" "$@"
+  fi
+}
+
+ssh_ok() {
+  if command -v sshpass >/dev/null 2>&1; then
+    sshpass -p "${SSH_PASS}" ssh "${SSH_OPTS[@]}" "${SSH_USER}@${SSH_TARGET}" true 2>/dev/null
+  else
+    setup_askpass
+    DISPLAY="${DISPLAY:-:0}" SSH_ASKPASS="${ASKPASS_FILE}" SSH_ASKPASS_REQUIRE=force \
+      setsid -w ssh "${SSH_OPTS[@]}" "${SSH_USER}@${SSH_TARGET}" true 2>/dev/null
+  fi
 }
 
 remote_reboot_script() {
@@ -81,7 +117,6 @@ grub_reboot_sut() {
 if [[ "\${partlabel}" == "PE" ]]; then
   boot_dir=/boot
 else
-  # 当前在 SUT：GRUB 在 PE 分区
   sudo_cmd mkdir -p /mnt/pe_boot
   if ! mountpoint -q /mnt/pe_boot; then
     sudo_cmd mount "\${PE_DEV}" /mnt/pe_boot
@@ -104,7 +139,7 @@ wait_ssh() {
   local deadline=$((SECONDS + WAIT_SSH_SEC))
   info "waiting for SSH ${SSH_USER}@${SSH_TARGET} (up to ${WAIT_SSH_SEC}s)"
   while (( SECONDS < deadline )); do
-    if sshpass -p "${SSH_PASS}" ssh "${SSH_OPTS[@]}" "${SSH_USER}@${SSH_TARGET}" true 2>/dev/null; then
+    if ssh_ok; then
       info "SSH is up"
       return 0
     fi
@@ -113,9 +148,15 @@ wait_ssh() {
   die "SSH not reachable after reboot"
 }
 
-command -v sshpass >/dev/null || die "sshpass required on Pipeline agent"
+if command -v sshpass >/dev/null 2>&1; then
+  info "SSH auth via sshpass"
+else
+  info "sshpass not found; using SSH_ASKPASS fallback"
+  command -v setsid >/dev/null || die "need sshpass or setsid for password SSH"
+fi
 
 info "reboot ${SSH_TARGET} → ${MODE}"
-ssh_run "bash -s" <<< "$(remote_reboot_script "${MODE}")"
+ssh_exec bash -s <<< "$(remote_reboot_script "${MODE}")" || true
+# reboot 会断开连接，ssh 非 0 属正常
 sleep 15
 wait_ssh
