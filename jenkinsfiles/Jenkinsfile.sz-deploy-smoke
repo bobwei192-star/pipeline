@@ -1,15 +1,15 @@
 // SZ 方案 Deploy OS 冒烟：PE 刷盘 → reboot SUT → wait/reconnect Agent → SUT 验证
 //
-// 仓库: https://github.com/bobwei192-star/pipeline.git  （根目录即本 pipeline/）
-// Jenkins 任务:
-//   Pipeline script from SCM → Git → 上述仓库
-//   Script Path: jenkinsfiles/Jenkinsfile.sz-deploy-smoke   （不要加 pipeline/ 前缀）
-//   凭据: sut-lab-ssh (Username with password, amd / amdyes)
-//   Built-In 节点需: sshpass
+// 仓库: https://github.com/bobwei192-star/pipeline.git
+// Script Path: jenkinsfiles/Jenkinsfile.sz-deploy-smoke
 //
-// PE 上准备:
-//   ~/ubuntu26.04-minimal-next.pcl.gz
-//   ~/pipeline/scripts/slave/deploy_os_in_ci.sh（与仓库同步）
+// 凭据（Manage Jenkins → Credentials）:
+//   sut-lab-ssh   — Username/password: amd / amdyes（SSH reboot）
+//   jenkins-api   — Username/password: admin / <JENKINS_TOKEN>（查节点 online）
+// Built-In 需: curl, sshpass
+//
+// PE: ~/ubuntu26.04-minimal-next.pcl.gz
+//      ~/pipeline/scripts/slave/deploy_os_in_ci.sh
 
 pipeline {
   agent none
@@ -31,9 +31,11 @@ pipeline {
     string(name: 'SCRIPTS_DIR', defaultValue: '/home/amd/pipeline/scripts',
       description: '测试机上 deploy_os_in_ci.sh 所在 scripts 目录')
     string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'sut-lab-ssh',
-      description: 'SSH 凭据 ID（Built-In 跑 ensure_slave 用）')
+      description: 'SSH 凭据 ID')
+    string(name: 'JENKINS_API_CREDENTIALS_ID', defaultValue: 'jenkins-api',
+      description: 'Jenkins API 凭据（admin + API token）')
     string(name: 'CONTROL_AGENT_LABEL', defaultValue: 'built-in',
-      description: 'Pipeline 控制端 label；若排队失败可改为 master')
+      description: '控制端 label；排队失败可改 master')
   }
 
   stages {
@@ -50,9 +52,17 @@ pipeline {
       steps {
         unstash 'sz-pipeline'
         script {
-          def sz = load 'jenkinsfiles/szLab.groovy'
-          echo "Node ${params.NODE_NAME} @ ${params.NODE_IP}"
-          sz.waitForNodeOnline(params.NODE_NAME, 120)
+          withCredentials([
+            usernamePassword(
+              credentialsId: params.JENKINS_API_CREDENTIALS_ID,
+              usernameVariable: 'JENKINS_USER',
+              passwordVariable: 'JENKINS_TOKEN'
+            )
+          ]) {
+            def sz = load 'jenkinsfiles/szLab.groovy'
+            echo "Node ${params.NODE_NAME} @ ${params.NODE_IP} JENKINS_URL=${env.JENKINS_URL}"
+            sz.waitForNodeOnline(params.NODE_NAME, 120)
+          }
         }
       }
     }
@@ -105,11 +115,19 @@ pipeline {
       steps {
         unstash 'sz-pipeline'
         script {
-          def sz = load 'jenkinsfiles/szLab.groovy'
-          sz.waitForNodeOffline(params.NODE_NAME, 180)
-          sz.reconnectNode(params.NODE_NAME)
-          sz.waitForNodeOnline(params.NODE_NAME, 900)
-          echo 'SUT Agent online'
+          withCredentials([
+            usernamePassword(
+              credentialsId: params.JENKINS_API_CREDENTIALS_ID,
+              usernameVariable: 'JENKINS_USER',
+              passwordVariable: 'JENKINS_TOKEN'
+            )
+          ]) {
+            def sz = load 'jenkinsfiles/szLab.groovy'
+            sz.waitForNodeOffline(params.NODE_NAME, 180)
+            sz.reconnectNode(params.NODE_NAME)
+            sz.waitForNodeOnline(params.NODE_NAME, 900)
+            echo 'SUT Agent online'
+          }
         }
       }
     }

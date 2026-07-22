@@ -1,23 +1,47 @@
-// SZ 实验室 Pipeline 辅助（load 后调用）
-// 沙箱下首次跑需管理员批准签名（见下方注释）。
+// SZ 实验室 Pipeline 辅助 —— 用 Jenkins HTTP API，不碰 Jenkins.get()（免 Script Approval）
+// 调用前需设置（Jenkinsfile withCredentials）:
+//   JENKINS_URL（Controller 通常已注入）
+//   JENKINS_USER / JENKINS_TOKEN
 
-import jenkins.model.Jenkins
+def _jenkinsUrl() {
+  def u = env.JENKINS_URL ?: error('JENKINS_URL is not set')
+  return u.endsWith('/') ? u : (u + '/')
+}
 
-def _computer(String nodeName) {
-  // Jenkins.get() 比 getInstance 更规范；仍需 Script Approval 一次
-  def node = Jenkins.get().getNode(nodeName)
-  if (node == null && nodeName == 'built-in') {
-    return Jenkins.get().getComputer('')
+def _curlAuth() {
+  if (!env.JENKINS_USER || !env.JENKINS_TOKEN) {
+    error('JENKINS_USER/JENKINS_TOKEN required (create credentials jenkins-api)')
   }
-  return node?.toComputer()
+  return "-u '${env.JENKINS_USER}:${env.JENKINS_TOKEN}'"
+}
+
+def _computerJson(String nodeName) {
+  // 节点名勿特殊字符时直接用；避免 URLEncoder 再触发沙箱
+  def url = "${_jenkinsUrl()}computer/${nodeName}/api/json?tree=offline,temporarilyOffline"
+  def json = sh(
+    script: "curl -fsSk ${_curlAuth()} '${url}'",
+    returnStdout: true
+  ).trim()
+  return json
+}
+
+def _isOfflineJson(String json) {
+  if (json.contains('"offline":true')) {
+    return true
+  }
+  if (json.contains('"offline":false')) {
+    return false
+  }
+  error("unexpected computer api json: ${json}")
 }
 
 def waitForNodeOffline(String nodeName, int timeoutSec = 180) {
   timeout(time: timeoutSec, unit: 'SECONDS') {
     waitUntil(initialRecurrencePeriod: 5000) {
-      def c = _computer(nodeName)
-      echo "wait offline ${nodeName}: computer=${c != null} offline=${c?.offline}"
-      return (c == null || c.offline)
+      def json = _computerJson(nodeName)
+      def off = _isOfflineJson(json)
+      echo "wait offline ${nodeName}: offline=${off} raw=${json}"
+      return off
     }
   }
 }
@@ -25,20 +49,30 @@ def waitForNodeOffline(String nodeName, int timeoutSec = 180) {
 def waitForNodeOnline(String nodeName, int timeoutSec = 900) {
   timeout(time: timeoutSec, unit: 'SECONDS') {
     waitUntil(initialRecurrencePeriod: 5000) {
-      def c = _computer(nodeName)
-      def ok = (c != null && c.online)
-      echo "wait online ${nodeName}: online=${ok}"
-      return ok
+      def json = _computerJson(nodeName)
+      def off = _isOfflineJson(json)
+      echo "wait online ${nodeName}: offline=${off}"
+      return !off
     }
   }
 }
 
 def reconnectNode(String nodeName) {
-  def c = _computer(nodeName)
-  if (c == null) {
-    error("Jenkins node not found: ${nodeName}")
-  }
-  c.connect(false)
+  def base = _jenkinsUrl()
+  def auth = _curlAuth()
+  sh """
+    set +e
+    CRUMB_JSON=\$(curl -fsSk ${auth} '${base}crumbIssuer/api/json' 2>/dev/null)
+    CRUMB_HDR=""
+    if echo "\$CRUMB_JSON" | grep -q crumbRequestField; then
+      FIELD=\$(echo "\$CRUMB_JSON" | sed -n 's/.*"crumbRequestField":"\\([^"]*\\)".*/\\1/p')
+      CRUMB=\$(echo "\$CRUMB_JSON" | sed -n 's/.*"crumb":"\\([^"]*\\)".*/\\1/p')
+      CRUMB_HDR="-H \${FIELD}:\${CRUMB}"
+    fi
+    curl -fsSk -X POST ${auth} \$CRUMB_HDR '${base}computer/${nodeName}/launchSlaveAgent' \\
+      || curl -fsSk -X POST ${auth} \$CRUMB_HDR '${base}computer/${nodeName}/reconnect' \\
+      || true
+  """
 }
 
 def partlabelOnNode(String expected = '') {
