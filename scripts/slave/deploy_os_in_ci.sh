@@ -82,9 +82,19 @@ restore_partition() {
     die "${SUT_DEV} still mounted"
   fi
 
+  # 若磁盘上已有同名 .pcl，但比 .gz 旧，必须删掉，否则会刷错「旧包」
+  if [[ -f "${pcl}" && -f "${PCL_GZ}" ]]; then
+    if [[ "${pcl}" -ot "${PCL_GZ}" ]]; then
+      info "stale ${pcl} older than ${PCL_GZ}; removing before decompress"
+      rm -f "${pcl}"
+    fi
+  fi
+
   if [[ ! -f "${pcl}" ]]; then
     info "decompress ${PCL_GZ}"
     gzip -dk "${PCL_GZ}"
+  else
+    info "using existing ${pcl}"
   fi
   [[ -f "${pcl}" ]] || die "missing ${pcl}"
 
