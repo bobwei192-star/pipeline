@@ -1,8 +1,9 @@
 // SZ 方案 Deploy OS 冒烟：PE 刷盘 → reboot SUT → wait/reconnect Agent → SUT 验证
 //
+// 仓库: https://github.com/bobwei192-star/pipeline.git  （根目录即本 pipeline/）
 // Jenkins 任务:
-//   Pipeline from SCM → Script Path: pipeline/jenkinsfiles/Jenkinsfile.sz-deploy-smoke
-//   或 Pipeline script（粘贴本文件）+ 另拷贝脚本到 PE
+//   Pipeline script from SCM → Git → 上述仓库
+//   Script Path: jenkinsfiles/Jenkinsfile.sz-deploy-smoke   （不要加 pipeline/ 前缀）
 //   凭据: sut-lab-ssh (Username with password, amd / amdyes)
 //   Built-In 节点需: sshpass
 //
@@ -40,7 +41,7 @@ pipeline {
       agent { label "${params.CONTROL_AGENT_LABEL}" }
       steps {
         checkout scm
-        stash name: 'sz-pipeline', includes: 'pipeline/jenkinsfiles/**,pipeline/scripts/master/**'
+        stash name: 'sz-pipeline', includes: 'jenkinsfiles/**,scripts/master/**'
       }
     }
 
@@ -49,7 +50,7 @@ pipeline {
       steps {
         unstash 'sz-pipeline'
         script {
-          def sz = load 'pipeline/jenkinsfiles/szLab.groovy'
+          def sz = load 'jenkinsfiles/szLab.groovy'
           echo "Node ${params.NODE_NAME} @ ${params.NODE_IP}"
           sz.waitForNodeOnline(params.NODE_NAME, 120)
         }
@@ -61,7 +62,7 @@ pipeline {
       steps {
         unstash 'sz-pipeline'
         script {
-          def sz = load 'pipeline/jenkinsfiles/szLab.groovy'
+          def sz = load 'jenkinsfiles/szLab.groovy'
           node(params.NODE_NAME) {
             sz.partlabelOnNode('PE')
             sh """
@@ -89,8 +90,8 @@ pipeline {
           ]) {
             sh """
               set -e
-              chmod +x pipeline/scripts/master/ensure_slave_in_pe.sh
-              PE_SSH_PASS="\${SSH_PASS}" ./pipeline/scripts/master/ensure_slave_in_pe.sh \\
+              chmod +x scripts/master/ensure_slave_in_pe.sh
+              PE_SSH_PASS="\${SSH_PASS}" ./scripts/master/ensure_slave_in_pe.sh \\
                 -i '${params.NODE_IP}' -u "\${SSH_USER}" -p "\${SSH_PASS}" -o sut \\
                 --grub-sut '${params.GRUB_SUT_ENTRY}' --wait 600
             """
@@ -104,7 +105,7 @@ pipeline {
       steps {
         unstash 'sz-pipeline'
         script {
-          def sz = load 'pipeline/jenkinsfiles/szLab.groovy'
+          def sz = load 'jenkinsfiles/szLab.groovy'
           sz.waitForNodeOffline(params.NODE_NAME, 180)
           sz.reconnectNode(params.NODE_NAME)
           sz.waitForNodeOnline(params.NODE_NAME, 900)
@@ -118,7 +119,7 @@ pipeline {
       steps {
         unstash 'sz-pipeline'
         script {
-          def sz = load 'pipeline/jenkinsfiles/szLab.groovy'
+          def sz = load 'jenkinsfiles/szLab.groovy'
           node(params.NODE_NAME) {
             sz.partlabelOnNode('sut-target-os')
             sh '''
