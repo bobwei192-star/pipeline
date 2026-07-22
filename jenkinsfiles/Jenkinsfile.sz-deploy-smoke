@@ -143,8 +143,8 @@ pipeline {
             )
           ]) {
             def sz = load 'jenkinsfiles/szLab.groovy'
-            sz.waitForNodeOffline(params.NODE_NAME, 180)
-            sz.reconnectNode(params.NODE_NAME)
+            // Reboot 阶段已等 SSH 起来；WebSocket Agent 常在此之前就已自连 online。
+            // 再 waitOffline 会死等（节点已经 offline=false）。入站 Agent 也不需要 launchSlaveAgent。
             sz.waitForNodeOnline(params.NODE_NAME, 900)
             echo 'SUT Agent online'
           }
