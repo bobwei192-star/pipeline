@@ -1,0 +1,100 @@
+name: ROCm kernel regression (ComfyUI SDXL)
+
+on:
+  workflow_dispatch:
+    inputs:
+      good_label:
+        description: Self-hosted runner label for known-good kernel
+        required: true
+        default: rocm-good-kernel
+        type: string
+      bad_label:
+        description: Self-hosted runner label for candidate/problem kernel
+        required: true
+        default: rocm-bad-kernel
+        type: string
+      test_case_root:
+        description: Absolute path to test_case on the runners
+        required: true
+        default: /home/zs/test_case
+        type: string
+
+jobs:
+  baseline:
+    name: baseline (good kernel)
+    runs-on:
+      - self-hosted
+      - ${{ inputs.good_label }}
+    timeout-minutes: 180
+    steps:
+      - name: Run ComfyUI SDXL benchmark
+        env:
+          KERNEL_ROLE: good
+          RESULT_JSON: /tmp/rocm-kernel-bench/result-good.json
+        run: |
+          set -Eeuo pipefail
+          mkdir -p /tmp/rocm-kernel-bench
+          ROOT="${{ inputs.test_case_root }}"
+          test -x "${ROOT}/suites/rocm/test_comfyui_sdxl_kernel_regression.sh"
+          "${ROOT}/suites/rocm/test_comfyui_sdxl_kernel_regression.sh"
+
+      - name: Upload good result
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-good
+          path: /tmp/rocm-kernel-bench/result-good.json
+          if-no-files-found: error
+
+  candidate:
+    name: candidate (bad kernel)
+    runs-on:
+      - self-hosted
+      - ${{ inputs.bad_label }}
+    timeout-minutes: 180
+    steps:
+      - name: Run ComfyUI SDXL benchmark
+        env:
+          KERNEL_ROLE: bad
+          RESULT_JSON: /tmp/rocm-kernel-bench/result-bad.json
+        run: |
+          set -Eeuo pipefail
+          mkdir -p /tmp/rocm-kernel-bench
+          ROOT="${{ inputs.test_case_root }}"
+          test -x "${ROOT}/suites/rocm/test_comfyui_sdxl_kernel_regression.sh"
+          "${ROOT}/suites/rocm/test_comfyui_sdxl_kernel_regression.sh"
+
+      - name: Upload bad result
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-bad
+          path: /tmp/rocm-kernel-bench/result-bad.json
+          if-no-files-found: error
+
+  compare:
+    name: compare results
+    needs: [baseline, candidate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pipeline
+        uses: actions/checkout@v4
+
+      - name: Download good result
+        uses: actions/download-artifact@v4
+        with:
+          name: result-good
+          path: artifacts/good
+
+      - name: Download bad result
+        uses: actions/download-artifact@v4
+        with:
+          name: result-bad
+          path: artifacts/bad
+
+      - name: Compare
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/compare_rocm_kernel_results.py \
+            --good artifacts/good/result-good.json \
+            --bad artifacts/bad/result-bad.json

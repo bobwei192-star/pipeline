@@ -1,0 +1,3 @@
+# SZ 实验室 SUT 台账 — set_jnlp_agent.sh 按 IP 解析节点名，并写入 p3 node.env
+# 格式: NODE_NAME <TAB> PE_IP [<TAB> SECRET_HEX]
+SUT-003	172.31.8.5	aee8ee339364656b7795c7425553957b63fbe8bc168175dd9c0fec839772cffb

@@ -1,0 +1,24 @@
+{
+  "kernel_release": "6.17.0-generic",
+  "kernel_role": "good",
+  "comfyui_url": "http://127.0.0.1:8188",
+  "model_path": "/tmp/sd_xl_base_1.0.safetensors",
+  "params": {
+    "steps": 20,
+    "seed": 42,
+    "width": 1024,
+    "height": 1024,
+    "warmup": 1,
+    "runs": 3,
+    "timeout_sec": 600
+  },
+  "runs": [
+    {"index": 0, "elapsed_sec": 9.1, "status": "ok"},
+    {"index": 1, "elapsed_sec": 8.9, "status": "ok"},
+    {"index": 2, "elapsed_sec": 9.0, "status": "ok"}
+  ],
+  "median_sec": 9.0,
+  "mean_sec": 9.0,
+  "timeout_count": 0,
+  "ok_count": 3
+}

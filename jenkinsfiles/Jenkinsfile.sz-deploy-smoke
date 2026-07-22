@@ -1,0 +1,150 @@
+// SZ 方案 Deploy OS 冒烟：PE 刷盘 → reboot SUT → wait/reconnect Agent → SUT 验证
+//
+// Jenkins 任务:
+//   Pipeline from SCM → Script Path: pipeline/jenkinsfiles/Jenkinsfile.sz-deploy-smoke
+//   或 Pipeline script（粘贴本文件）+ 另拷贝脚本到 PE
+//   凭据: sut-lab-ssh (Username with password, amd / amdyes)
+//   Built-In 节点需: sshpass
+//
+// PE 上准备:
+//   ~/ubuntu26.04-minimal-next.pcl.gz
+//   ~/pipeline/scripts/slave/deploy_os_in_ci.sh（与仓库同步）
+
+pipeline {
+  agent none
+
+  options {
+    disableConcurrentBuilds()
+    timeout(time: 3, unit: 'HOURS')
+    timestamps()
+  }
+
+  parameters {
+    string(name: 'NODE_NAME', defaultValue: 'SUT-003', description: 'Jenkins 节点名')
+    string(name: 'NODE_IP', defaultValue: '172.31.8.5', description: '测试机 IP')
+    string(name: 'PCL_GZ', defaultValue: '/home/amd/ubuntu26.04-minimal-next.pcl.gz',
+      description: 'partclone 镜像（在测试机 node 上）')
+    string(name: 'GRUB_SUT_ENTRY',
+      defaultValue: 'osprober-gnulinux-simple-c0b61a7e-8069-47df-8f09-2fa33abb81ac',
+      description: 'SUT 26.04 grub 菜单 ID')
+    string(name: 'SCRIPTS_DIR', defaultValue: '/home/amd/pipeline/scripts',
+      description: '测试机上 deploy_os_in_ci.sh 所在 scripts 目录')
+    string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'sut-lab-ssh',
+      description: 'SSH 凭据 ID（Built-In 跑 ensure_slave 用）')
+    string(name: 'CONTROL_AGENT_LABEL', defaultValue: 'built-in',
+      description: 'Pipeline 控制端 label；若排队失败可改为 master')
+  }
+
+  stages {
+    stage('Checkout') {
+      agent { label "${params.CONTROL_AGENT_LABEL}" }
+      steps {
+        checkout scm
+        stash name: 'sz-pipeline', includes: 'pipeline/jenkinsfiles/**,pipeline/scripts/master/**'
+      }
+    }
+
+    stage('Preflight') {
+      agent { label "${params.CONTROL_AGENT_LABEL}" }
+      steps {
+        unstash 'sz-pipeline'
+        script {
+          def sz = load 'pipeline/jenkinsfiles/szLab.groovy'
+          echo "Node ${params.NODE_NAME} @ ${params.NODE_IP}"
+          sz.waitForNodeOnline(params.NODE_NAME, 120)
+        }
+      }
+    }
+
+    stage('Deploy OS on PE') {
+      agent { label "${params.CONTROL_AGENT_LABEL}" }
+      steps {
+        unstash 'sz-pipeline'
+        script {
+          def sz = load 'pipeline/jenkinsfiles/szLab.groovy'
+          node(params.NODE_NAME) {
+            sz.partlabelOnNode('PE')
+            sh """
+              set -e
+              test -f '${params.PCL_GZ}' || { echo 'missing ${params.PCL_GZ}'; exit 1; }
+              chmod +x '${params.SCRIPTS_DIR}/slave/deploy_os_in_ci.sh'
+              '${params.SCRIPTS_DIR}/slave/deploy_os_in_ci.sh' -f '${params.PCL_GZ}'
+            """
+          }
+        }
+      }
+    }
+
+    stage('Reboot to SUT') {
+      agent { label "${params.CONTROL_AGENT_LABEL}" }
+      steps {
+        unstash 'sz-pipeline'
+        script {
+          withCredentials([
+            usernamePassword(
+              credentialsId: params.SSH_CREDENTIALS_ID,
+              usernameVariable: 'SSH_USER',
+              passwordVariable: 'SSH_PASS'
+            )
+          ]) {
+            sh """
+              set -e
+              chmod +x pipeline/scripts/master/ensure_slave_in_pe.sh
+              PE_SSH_PASS="\${SSH_PASS}" ./pipeline/scripts/master/ensure_slave_in_pe.sh \\
+                -i '${params.NODE_IP}' -u "\${SSH_USER}" -p "\${SSH_PASS}" -o sut \\
+                --grub-sut '${params.GRUB_SUT_ENTRY}' --wait 600
+            """
+          }
+        }
+      }
+    }
+
+    stage('Wait SUT Agent') {
+      agent { label "${params.CONTROL_AGENT_LABEL}" }
+      steps {
+        unstash 'sz-pipeline'
+        script {
+          def sz = load 'pipeline/jenkinsfiles/szLab.groovy'
+          sz.waitForNodeOffline(params.NODE_NAME, 180)
+          sz.reconnectNode(params.NODE_NAME)
+          sz.waitForNodeOnline(params.NODE_NAME, 900)
+          echo 'SUT Agent online'
+        }
+      }
+    }
+
+    stage('Verify on SUT') {
+      agent { label "${params.CONTROL_AGENT_LABEL}" }
+      steps {
+        unstash 'sz-pipeline'
+        script {
+          def sz = load 'pipeline/jenkinsfiles/szLab.groovy'
+          node(params.NODE_NAME) {
+            sz.partlabelOnNode('sut-target-os')
+            sh '''
+              set -e
+              uname -a
+              systemctl is-active jenkins-agent.service
+              systemctl status jenkins-agent.service --no-pager | head -15
+              test -f /home/amd/agent.jar
+              if mountpoint -q /shared; then
+                test -f /shared/lab/agent/node.env && echo "p3 node.env OK"
+              else
+                echo "WARN: /shared not mounted"
+              fi
+            '''
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo 'PASSED: deploy_os@PE → ensure_slave→SUT → agent reconnect → verify@SUT'
+    }
+    failure {
+      echo 'FAILED — see Console Output; on SUT: journalctl -u jenkins-agent'
+    }
+  }
+}
