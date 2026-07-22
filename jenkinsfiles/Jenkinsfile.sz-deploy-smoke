@@ -51,7 +51,7 @@ pipeline {
       agent { label "${params.CONTROL_AGENT_LABEL}" }
       steps {
         checkout scm
-        stash name: 'sz-pipeline', includes: 'jenkinsfiles/**,scripts/master/**'
+        stash name: 'sz-pipeline', includes: 'jenkinsfiles/**,scripts/master/**,scripts/slave/**'
       }
     }
 
@@ -81,14 +81,26 @@ pipeline {
         unstash 'sz-pipeline'
         script {
           def sz = load 'jenkinsfiles/szLab.groovy'
-          node(params.NODE_NAME) {
-            sz.partlabelOnNode('PE')
-            sh """
-              set -e
-              test -f '${params.PCL_GZ}' || { echo 'missing ${params.PCL_GZ}'; exit 1; }
-              chmod +x '${params.SCRIPTS_DIR}/slave/deploy_os_in_ci.sh'
-              '${params.SCRIPTS_DIR}/slave/deploy_os_in_ci.sh' -f '${params.PCL_GZ}'
-            """
+          withCredentials([
+            usernamePassword(
+              credentialsId: params.SSH_CREDENTIALS_ID,
+              usernameVariable: 'SSH_USER',
+              passwordVariable: 'SSH_PASS'
+            )
+          ]) {
+            node(params.NODE_NAME) {
+              unstash 'sz-pipeline'
+              sz.partlabelOnNode('PE')
+              withEnv(["PCL_GZ=${params.PCL_GZ}"]) {
+                sh '''
+                  set -e
+                  test -f "$PCL_GZ" || { echo "missing $PCL_GZ"; exit 1; }
+                  chmod +x scripts/slave/deploy_os_in_ci.sh
+                  export SUDO_PASS="$SSH_PASS"
+                  ./scripts/slave/deploy_os_in_ci.sh -f "$PCL_GZ"
+                '''
+              }
+            }
           }
         }
       }

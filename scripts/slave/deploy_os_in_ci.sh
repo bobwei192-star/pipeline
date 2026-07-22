@@ -58,8 +58,13 @@ resolve_sut_dev() {
 sudo_cmd() {
   if [[ "$(id -u)" -eq 0 ]]; then
     "$@"
-  else
+  elif [[ -n "${SUDO_PASS:-}" ]]; then
+    # CI / agent 无 TTY：从 SUDO_PASS 读密码（Jenkins withCredentials 注入）
+    printf '%s\n' "${SUDO_PASS}" | sudo -S -p '' "$@"
+  elif sudo -n true 2>/dev/null; then
     sudo "$@"
+  else
+    die "sudo needs password: set SUDO_PASS or configure NOPASSWD"
   fi
 }
 

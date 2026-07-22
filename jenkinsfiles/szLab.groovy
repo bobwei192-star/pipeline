@@ -15,7 +15,8 @@ def _curlAuth() {
   if (!env.JENKINS_USER || !env.JENKINS_TOKEN) {
     error('JENKINS_USER/JENKINS_TOKEN required (create credentials jenkins-api)')
   }
-  return "-u '${env.JENKINS_USER}:${env.JENKINS_TOKEN}'"
+  // 交给 shell 展开，避免 Groovy 插值把 token 写进 sh 参数
+  return '-u "$JENKINS_USER:$JENKINS_TOKEN"'
 }
 
 def _computerJson(String nodeName) {
