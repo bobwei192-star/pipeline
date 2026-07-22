@@ -4,7 +4,10 @@
 //   JENKINS_USER / JENKINS_TOKEN
 
 def _jenkinsUrl() {
-  def u = env.JENKINS_URL ?: error('JENKINS_URL is not set')
+  def u = env.JENKINS_URL ?: env.SZ_JENKINS_URL ?: ''
+  if (!u) {
+    error('JENKINS_URL is not set (set Jenkins Location, or pass SZ_JENKINS_URL / param JENKINS_BASE_URL)')
+  }
   return u.endsWith('/') ? u : (u + '/')
 }
 

@@ -34,8 +34,16 @@ pipeline {
       description: 'SSH 凭据 ID')
     string(name: 'JENKINS_API_CREDENTIALS_ID', defaultValue: 'jenkins-api',
       description: 'Jenkins API 凭据（admin + API token）')
+    string(name: 'JENKINS_BASE_URL',
+      defaultValue: 'https://172.31.0.3:18440/jenkins/',
+      description: 'Jenkins 根 URL（Built-In 常无 JENKINS_URL，用此兜底）')
     string(name: 'CONTROL_AGENT_LABEL', defaultValue: 'built-in',
       description: '控制端 label；排队失败可改 master')
+  }
+
+  environment {
+    // Built-In 上系统可能未注入 JENKINS_URL
+    SZ_JENKINS_URL = "${params.JENKINS_BASE_URL}"
   }
 
   stages {
@@ -60,7 +68,7 @@ pipeline {
             )
           ]) {
             def sz = load 'jenkinsfiles/szLab.groovy'
-            echo "Node ${params.NODE_NAME} @ ${params.NODE_IP} JENKINS_URL=${env.JENKINS_URL}"
+            echo "Node ${params.NODE_NAME} @ ${params.NODE_IP} JENKINS_URL=${env.JENKINS_URL ?: env.SZ_JENKINS_URL}"
             sz.waitForNodeOnline(params.NODE_NAME, 120)
           }
         }
